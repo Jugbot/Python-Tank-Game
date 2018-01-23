@@ -1,15 +1,17 @@
-import sys
-import random
-import pyglet
-import numpy
-from pyqtree import Index
-from pyglet.window import key
 import math
+import random
+import sys
 
+import numpy
+import pyglet
+from pyglet.window import key
+from pyqtree import Index
 
-window = pyglet.window.Window(fullscreen=True)
+config = pyglet.gl.Config(sample_buffers=1, samples=4)
+window = pyglet.window.Window(config=config, fullscreen=True)
 batch = pyglet.graphics.Batch()
-qtree = Index(bbox=(0, 0, window.width, window.height))
+playingfield=(10, 10, window.width-20, window.height-20)
+qtree = Index(bbox=playingfield)
 fps = pyglet.clock.ClockDisplay()
 
 @window.event
@@ -22,6 +24,81 @@ def on_draw():
 def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
     pyglet.graphics.draw(4, pyglet.gl.GL_QUADS, ('v2f', [x, y, x-dx, y, x-dx, y-dy, x, y-dy]))
 
+class Level:
+
+    def __init__(self):
+        pass
+    #subdivision method
+    def generate_new(self,bbox,x,y): #bbox is the bounds of the draw
+        cells = [[[False] * 2 for _ in range(y)] for _ in range(x)]
+        for coord in self.recr_subdivide(0, x-1, 0, y-1, True):
+            if coord[2]: #if Floor
+                cells[coord[0]][coord[1]][0] = True #(Floor,Wall) of cell
+            else:
+                cells[coord[0]][coord[1]][1] = True
+        '''
+        for ydim in range(y):
+            for xdim in range(x):
+                try:
+                    if cells[xdim][ydim][0]:
+                        print('_', end='')
+                    else:
+                        print(' ', end='')
+                    if cells[xdim][ydim][1]:
+                        print('|', end='')
+                    else:
+                        print(' ', end='')
+                except IndexError:
+                    pass
+            print()
+        '''
+        cellsize = min(bbox[3]/y, bbox[2]/x) #if y subdivisions dimension should be used to scale level (to fit bbox)
+        wt = 7 #Wall Thickness
+        offsetx = bbox[0] + (bbox[2] - x*cellsize)/2
+        offsety = bbox[1] + (bbox[3] - y*cellsize)/2
+        Wall(offsetx, offsety, cellsize*x+wt, wt)
+        Wall(offsetx, offsety, wt, cellsize*y+wt)
+        Wall(cellsize*x + offsetx, offsety, wt, cellsize*y+wt)
+        Wall(offsetx, offsety + cellsize*y, cellsize*x+wt, wt)
+        for wx in range(len(cells)):
+            for wy in range(len(cells[0])):
+                if cells[wx][wy][0]:
+                    Wall(offsetx+wx*cellsize, offsety+(wy+1)*cellsize, cellsize + wt, wt)
+                if cells[wx][wy][1]:
+                    Wall(offsetx + (wx+1)*cellsize, offsety + wy*cellsize, wt, cellsize + wt)
+
+    def recr_subdivide(self, x1, x2, y1, y2, is_floor):
+
+        if x1 == x2 == y1 == y2:
+            return
+
+        if is_floor and y1 != y2: #True == widthwise
+            ymid = random.randint(y1, y2-1) #ignore last wall
+            yield from self.recr_subdivide(x1,x2,y1,ymid,False)
+            yield from self.recr_subdivide(x1,x2,ymid+1,y2,False)
+
+            hole = random.randint(x1, x2)
+            for xstep in range(x1, x2+1):
+                if xstep != hole:
+                    yield (xstep, ymid, is_floor)
+
+        elif not is_floor and x1 != x2:
+            xmid = random.randint(x1, x2-1) #somehow gives x2??
+            yield from self.recr_subdivide(xmid+1,x2,y1,y2,True)
+            yield from self.recr_subdivide(x1,xmid,y1,y2,True)
+
+            hole = random.randint(y1, y2)
+            for ystep in range(y1, y2+1):
+                if ystep != hole:
+                    yield (xmid, ystep, is_floor)
+
+
+
+'''
+-----------------------------------------
+Entities
+-----------------------------------------
+'''
 class Entity(object):
 
     def __init__(self, x, y , w, h, rot = 0):
@@ -97,6 +174,7 @@ class Projectile(Entity):
         self.bbox = (x, y, x+self.size, y+self.size)
         vrts = (x, y, x + self.size, y, x + self.size, y + self.size, x, y + self.size)
         self.vertex_list = batch.add(4, pyglet.gl.GL_QUADS, None, ('v2f', vrts))
+        self.compromised = False
 
     def move(self, x, y):
         self.x = x
@@ -115,8 +193,9 @@ class Projectile(Entity):
     def update(self, dt):
         #collision pre-check for a multiple collision update using simple "push" method
         #possibility for phasing through thin objects :(
-        if (self.out_of_bounds()):
+        if self.out_of_bounds() and not self.compromised:
             print("uh-oh")
+            self.compromised = True
             #self.vertex_list.delete()
             #somehow get it out of the list
         '''for hit in qtree.intersect(self.bbox):
@@ -245,12 +324,7 @@ def global_update(dt):
 pyglet.clock.schedule_interval(global_update, 1/120.)
 
 if __name__ == "__main__":
-    w_height = window.height
-    w_width = window.width
-    walls = [
-        Wall(0,0,w_width,7),
-        Wall(0,0,7,w_height),
-        Wall(w_width-7,0,7,w_height),
-        Wall(0,w_height-7,w_width,7)]
-
+    level = Level()
+    level.generate_new(playingfield,70,200)
     pyglet.app.run()
+
