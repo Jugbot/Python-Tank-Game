@@ -325,6 +325,6 @@ pyglet.clock.schedule_interval(global_update, 1/120.)
 
 if __name__ == "__main__":
     level = Level()
-    level.generate_new(playingfield,70,200)
+    level.generate_new(playingfield,10,6)
     pyglet.app.run()
 
